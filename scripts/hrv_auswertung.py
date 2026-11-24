@@ -419,7 +419,9 @@ for achse, spalte, titel in [(ax[0], "HR_bpm", "HR (bpm)"), (ax[1], "lnRMSSD", "
     for m in marker_s:
         achse.axvline(m, color="red", ls="--", lw=0.8)
     for von_s, bis_s in grau_bereiche:
-        achse.axvspan(von_s, min(bis_s, t_neu[-1]), color="grey", alpha=0.15, lw=0)
+        # kräftigeres Grau + Schraffur, damit es auch auf hellen Bildschirmen sichtbar ist
+        achse.axvspan(von_s, min(bis_s, t_neu[-1]), facecolor=(0.55, 0.55, 0.55, 0.30),
+                      hatch="//", edgecolor=(0.35, 0.35, 0.35, 0.6), lw=0, zorder=0)
     achse.set_ylabel(titel)
 for m, name in zip(marker_s, marker_namen):
     ax[0].text(m, ax[0].get_ylim()[1], f" {name}", color="red", fontsize=8, va="top")
