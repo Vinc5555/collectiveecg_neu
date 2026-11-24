@@ -1,0 +1,21 @@
+# Umgebung
+venv/
+__pycache__/
+*.pyc
+
+# Messdaten und Logs nicht ins Repository
+data/lab_internal/raw/*
+data/lab_internal/logs/*
+!data/lab_internal/raw/.gitkeep
+!data/lab_internal/logs/.gitkeep
+
+# Doku-Build
+doc/public/build/*
+
+# Ergebnisse der Auswertung (lassen sich aus den Rohdaten neu erzeugen)
+output/*
+!output/.gitkeep
+
+# Interne Dateien (nicht veröffentlichen)
+materials/lab_internal/config/alt/
+doc/lab_internal/versionen_auswertung.txt

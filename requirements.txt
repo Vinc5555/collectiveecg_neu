@@ -1,0 +1,19 @@
+# Pakete für die Aufnahme mit collectiveECG (Polar H10)
+# Versionen exakt wie in der funktionierenden venv von collectiveecg (Stand 20.11.2026)
+# Python 3.12.10
+bleak==3.0.2          # Bluetooth-Verbindung
+bleakheart==0.2.0     # Polar-H10-Datenstrom (EKG, ACC)
+asyncio==4.0.0        # in pyproject.toml gelistet
+ipdb==0.13.13         # in pyproject.toml gelistet (Debugger, für demo.py)
+matplotlib==3.11.2    # ecg_visualiser.py
+numpy==2.5.4          # resampler.py, demo.py
+scipy==1.18.1         # resampler.py, demo.py
+
+# Pakete für die Auswertung (scripts/hrv_auswertung.py), Versionen wie alte venv
+neurokit2==0.3.0
+pandas==3.1.1
+scikit-learn==1.9.1
+PyWavelets==1.10.0
+requests==2.34.2
+questionary==2.1.1      # Auswahl mit Pfeiltasten (Windows und Mac)
+openpyxl==3.1.5        # formatierte Excel-Ausgabe
