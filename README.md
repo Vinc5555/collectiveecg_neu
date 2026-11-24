@@ -68,7 +68,8 @@ python scripts/hrv_auswertung.py
 Das Skript fragt nacheinander:
 1. Messung (Liste aus `data/lab_internal/raw/`, mit ↑/↓ wählen, Enter, dann Enter zum Bestätigen)
 2. Namen der Marker, einzeln nacheinander (leer = `Marker_1`, `Marker_2`, ...), danach Kontrolle
-3. Intervall in Sekunden (z. B. 10, 30, 60, 300)
+3. Intervall in Sekunden (mindestens 10, z. B. 10, 30, 60, 300); Rest-Intervalle unter 10 s bekommen keine Werte
+4. Stabilisierung (j/n): bei `j` werden die ersten 60 s nach Messbeginn und jedem Marker eine eigene rote Zeile `Stab.`, die Intervalle beginnen danach; zusätzlich je Abschnitt `gesamt ab 60 s`. Die ersten 60 s der Messung (Gewöhnungsphase) werden immer markiert.
 
 Ergebnis im Ordner `output/<Messung>/`:
 - `<Messung>_hrv_<Intervall>s.csv` – eine Zeile pro Wert, für Statistik und Zusammenführen

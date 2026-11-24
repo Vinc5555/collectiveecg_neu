@@ -28,9 +28,12 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 # =====================================================================
 GRENZE_ARTEFAKTE = 5.0      # Hinweis ab diesem Anteil korrigierter Schläge (%)
 VALIDIERT_AB_S = 60         # RMSSD erst ab dieser Fensterlänge validiert (Esco & Flatt 2014)
-MIN_RR = 5                  # weniger RR-Intervalle -> keine Werte
-MIN_INTERVALL_S = 5         # kleinstes erlaubtes Intervall
+MIN_DAUER_S = 10            # kürzere Fenster -> keine Werte (kürzestes für RMSSD
+                            # untersuchte Fenster: 10 s, Muñoz et al. 2015)
+MIN_RR = 5                  # technische Absicherung: weniger RR-Intervalle -> keine Werte
+MIN_INTERVALL_S = 10        # kleinstes wählbares Intervall (= MIN_DAUER_S)
 AUSSCHNITT_S = None         # Start (s) des 10-s-EKG-Ausschnitts; None = Mitte der Messung
+STAB_S = 60                 # Stabilisierung nach Marker bzw. Gewöhnungsphase ab Messbeginn (s)
 # =====================================================================
 
 FS = 130
@@ -146,11 +149,21 @@ if len(marker_s) == 0:
     print("\nKeine Marker gefunden – die ganze Messung ist ein Abschnitt.")
 
 # --- 5. Intervall wählen ---
-print("\nIntervall in Sekunden (z. B. 10, 30, 60, 300).")
+print(f"\nIntervall in Sekunden (mindestens {MIN_INTERVALL_S}, z. B. 10, 30, 60, 300).")
 INTERVALL = frage_zahl("Intervall (s): ", MIN_INTERVALL_S)
 if INTERVALL < VALIDIERT_AB_S:
     print(f"  Hinweis: RMSSD unter {VALIDIERT_AB_S} s ist nicht validiert – "
           "die Werte werden in der Spalte 'Hinweis' gekennzeichnet.")
+
+# --- 5b. Stabilisierung nach Markern ---
+# j: die ersten STAB_S Sekunden nach Messbeginn und jedem Marker werden eine
+#    eigene, rot markierte Zeile; die Intervalle beginnen danach in voller Länge;
+#    zusätzlich je Abschnitt "gesamt ab 60 s" (Stabilisierung herausgerechnet).
+# n: Intervalle wie bisher; nur die Gewöhnungsphase (erste STAB_S s der Messung)
+#    wird immer markiert.
+antwort = input(f"\nStabilisierung: die ersten {STAB_S} s nach jedem Marker kennzeichnen? "
+                "(j = ja, Empfehlung / n = nein) [j]: ").strip().lower()
+STABILISIERUNG = antwort not in ("n", "nein")
 
 # --- 6. Filtern, R-Zacken, Artefaktkorrektur ---
 print("\nBerechne ...")
@@ -197,7 +210,9 @@ def kennwerte(start, ende):
         zeile["Artefakte_Prozent"] = round(anteil, 1)
         if anteil > GRENZE_ARTEFAKTE:
             hinweise.append(f"Artefakte > {GRENZE_ARTEFAKTE:g} %")
-    if np.any((luecken_von < ende) & (luecken_bis > start)):
+    if fdauer < MIN_DAUER_S - 1e-9:
+        hinweise.append(f"zu kurz (< {MIN_DAUER_S} s)")
+    elif np.any((luecken_von < ende) & (luecken_bis > start)):
         zeile["Paketluecke"] = True
         hinweise.append("Paketlücke")
     elif len(p) - 1 < MIN_RR:
@@ -225,20 +240,42 @@ for a in range(len(grenzen) - 1):
     basis = {"Messung": MESSUNG, "Abschnitt_Nr": a + 1, "Abschnitt": abschnitt}
     nr_int = 1
     start = a_start
+    phase = "Gewöhnungsphase" if a == 0 else "Stabilisierung"
+    if STABILISIERUNG:
+        # eigene Zeile für die Stabilisierung, Intervalle beginnen danach
+        ende = min(a_start + STAB_S, a_ende)
+        zeile, hinweise = kennwerte(a_start, ende)
+        zeilen.append({**basis, "Zeile": "Stab.", **zeile,
+                       "Hinweis": " | ".join([phase] + hinweise)})
+        start = ende
     while start < a_ende - 1e-9:
         ende = min(start + INTERVALL, a_ende)
         zeile, hinweise = kennwerte(start, ende)
         if ende - start < INTERVALL - 1e-9:
             hinweise.append(f"unvollständig ({ende - start:.1f} s)".replace(".", ","))
+        if not STABILISIERUNG and a == 0 and start < STAB_S:
+            hinweise.insert(0, f"enthält Gewöhnungsphase (0–{STAB_S} s)")
         zeilen.append({**basis, "Zeile": str(nr_int), **zeile,
                        "Hinweis": " | ".join(hinweise)})
         nr_int += 1
         start = ende
     zeile, hinweise = kennwerte(a_start, a_ende)
     zeilen.append({**basis, "Zeile": "gesamt", **zeile, "Hinweis": " | ".join(hinweise)})
+    if STABILISIERUNG:
+        if a_ende - a_start > STAB_S:
+            zeile, hinweise = kennwerte(a_start + STAB_S, a_ende)
+        else:
+            zeile, _ = kennwerte(a_ende, a_ende)  # leere Werte
+            zeile.update({"Start_s": round(a_ende, 1), "Dauer_s": 0.0})
+            hinweise = ["Abschnitt zu kurz für Stabilisierung"]
+            for k in ("HR_bpm", "RMSSD_ms", "lnRMSSD", "Artefakte_Prozent"):
+                zeile[k] = np.nan
+        zeilen.append({**basis, "Zeile": f"gesamt ab {STAB_S} s", **zeile,
+                       "Hinweis": " | ".join(hinweise)})
 
 ergebnis = pd.DataFrame(zeilen)
 ergebnis["Intervall_s"] = INTERVALL
+ergebnis["Stabilisierung_s"] = STAB_S if STABILISIERUNG else 0
 ergebnis["NeuroKit2_Version"] = nk.__version__
 
 # --- 9. Speichern ---
@@ -258,6 +295,7 @@ speichern(lambda pfad: ergebnis.to_csv(pfad, index=False, sep=";", decimal=",",
 GRAU = PatternFill("solid", fgColor="D9D9D9")      # Überschriften
 HELLGRAU = PatternFill("solid", fgColor="F2F2F2")  # jeder zweite Abschnitt
 GELB = PatternFill("solid", fgColor="FFF2CC")      # Zeilen "gesamt"
+ROT = PatternFill("solid", fgColor="F8CBAD")       # Stabilisierung / Gewöhnungsphase
 FETT = Font(bold=True)
 LINIE = Border(top=Side(style="thin", color="808080"))
 
@@ -273,6 +311,9 @@ info = [("Messung", MESSUNG),
         ("Dauer gesamt", f"{int(gesamt_dauer // 60)}:{int(gesamt_dauer % 60):02d} min "
                          f"({komma(gesamt_dauer)} s)"),
         ("Intervall", f"{INTERVALL} s"),
+        ("Stabilisierung", f"ja – je {STAB_S} s nach Messbeginn und jedem Marker (rot)"
+                           if STABILISIERUNG else
+                           f"nein – nur Gewöhnungsphase 0–{STAB_S} s markiert (rot)"),
         ("Marker", [f"{i}: {n} ({komma(m)} s)" for i, (n, m)
                     in enumerate(zip(marker_namen, marker_s), start=1)] or ["keine"]),
         ("Artefakte gesamt", f"{komma(100 * len(t_art) / len(peaks))} % "
@@ -297,7 +338,7 @@ kopf = ["Abschnitt", "Intervall", "Start_s", "Ende_s", "Dauer_s", "Schlaege",
         "Artefakte_%", "Paketluecke", "HR_bpm", "RMSSD_ms", "lnRMSSD", "Hinweis"]
 formate = {"Start_s": "0.0", "Ende_s": "0.0", "Dauer_s": "0.0", "Artefakte_%": "0.0",
            "HR_bpm": "0.0", "RMSSD_ms": "0.00", "lnRMSSD": "0.000"}
-breiten = [42, 10, 10, 10, 10, 10, 13, 13, 10, 12, 10, 60]
+breiten = [42, 26, 10, 10, 10, 10, 13, 13, 10, 12, 10, 60]
 S0 = 3  # Spalte C
 for j, (k, b) in enumerate(zip(kopf, breiten)):
     zelle = ws.cell(1, S0 + j, k)
@@ -307,10 +348,13 @@ for j, (k, b) in enumerate(zip(kopf, breiten)):
 for i, r in enumerate(ergebnis.itertuples(index=False), start=2):
     erste = (i == 2) or (ergebnis["Abschnitt_Nr"].iloc[i - 3] != r.Abschnitt_Nr)
     werte = [f"{r.Abschnitt_Nr}: {r.Abschnitt}" if erste else None,
-             r.Zeile if r.Zeile == "gesamt" else int(r.Zeile),
+             int(r.Zeile) if str(r.Zeile).isdigit() else r.Zeile,
              r.Start_s, r.Ende_s, r.Dauer_s, r.Schlaege, r.Artefakte_Prozent,
              "ja" if r.Paketluecke else "nein", r.HR_bpm, r.RMSSD_ms, r.lnRMSSD, r.Hinweis]
-    fuell = GELB if r.Zeile == "gesamt" else (HELLGRAU if r.Abschnitt_Nr % 2 == 0 else None)
+    gesamtzeile = str(r.Zeile).startswith("gesamt")
+    rot = r.Zeile == "Stab." or "Gewöhnungsphase" in str(r.Hinweis)
+    fuell = (GELB if gesamtzeile else ROT if rot
+             else HELLGRAU if r.Abschnitt_Nr % 2 == 0 else None)
     for j, w in enumerate(werte):
         if isinstance(w, float) and np.isnan(w):
             w = None
@@ -319,7 +363,7 @@ for i, r in enumerate(ergebnis.itertuples(index=False), start=2):
             zelle.number_format = formate[kopf[j]]
         if fuell is not None:
             zelle.fill = fuell
-        if r.Zeile == "gesamt":
+        if gesamtzeile:
             zelle.font = FETT
         if erste:
             zelle.border = LINIE
@@ -354,8 +398,14 @@ speichern(lambda pfad: plt.savefig(pfad, dpi=120), rz_pfad)
 plt.close()
 
 # Verlaufsgrafik: HR und lnRMSSD je Intervall, Gesamtwert je Abschnitt gestrichelt
-iv = ergebnis[ergebnis["Zeile"] != "gesamt"]
-ges = ergebnis[ergebnis["Zeile"] == "gesamt"]
+iv = ergebnis[~ergebnis["Zeile"].astype(str).str.startswith("gesamt")]
+# gestrichelt: Gesamtwert je Abschnitt (bei Stabilisierung: ohne Stabilisierung)
+ges_text = f"gesamt ab {STAB_S} s" if STABILISIERUNG else "gesamt"
+ges = ergebnis[ergebnis["Zeile"] == ges_text]
+# grau hinterlegt: Gewöhnungsphase immer, Stabilisierung nach Markern nur bei j
+grau_bereiche = [(max(t_neu[0], 0.0), STAB_S)]
+if STABILISIERUNG:
+    grau_bereiche += [(m, m + STAB_S) for m in marker_s]
 mitte = (iv["Start_s"] + iv["Ende_s"]) / 2
 validiert = iv["Dauer_s"] >= VALIDIERT_AB_S
 fig, ax = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
@@ -368,11 +418,14 @@ for achse, spalte, titel in [(ax[0], "HR_bpm", "HR (bpm)"), (ax[1], "lnRMSSD", "
         achse.hlines(g[spalte], g["Start_s"], g["Ende_s"], color="black", ls="--", lw=1)
     for m in marker_s:
         achse.axvline(m, color="red", ls="--", lw=0.8)
+    for von_s, bis_s in grau_bereiche:
+        achse.axvspan(von_s, min(bis_s, t_neu[-1]), color="grey", alpha=0.15, lw=0)
     achse.set_ylabel(titel)
 for m, name in zip(marker_s, marker_namen):
     ax[0].text(m, ax[0].get_ylim()[1], f" {name}", color="red", fontsize=8, va="top")
 hinweis = "" if INTERVALL >= VALIDIERT_AB_S else " – helle Punkte: < 60 s, RMSSD nicht validiert"
-ax[0].set_title(f"Verlauf je {INTERVALL} s (gestrichelt = Gesamtwert Abschnitt){hinweis}",
+ax[0].set_title(f"Verlauf je {INTERVALL} s (gestrichelt = {ges_text.replace('gesamt', 'Gesamtwert')}, "
+                f"grau = Gewöhnung/Stabilisierung){hinweis}",
                 fontsize=10)
 ax[1].set_xlabel("Zeit (s)")
 plt.tight_layout()
@@ -387,7 +440,8 @@ print(f"R-Zacken: {len(peaks)} | korrigiert: {len(t_art)} "
 print("\nGesamtwerte je Abschnitt:")
 spalten = ["Abschnitt", "Dauer_s", "Schlaege", "Artefakte_Prozent",
            "HR_bpm", "RMSSD_ms", "lnRMSSD", "Hinweis"]
-print(ges[spalten].to_string(index=False))
+print(ergebnis[ergebnis["Zeile"].astype(str).str.startswith("gesamt")]
+      [["Zeile"] + spalten].to_string(index=False))
 print("\nGespeichert:")
 for pfad in [csv_pfad, xlsx_pfad, rz_pfad, vl_pfad]:
     print("  " + os.path.relpath(pfad, PROJEKT))

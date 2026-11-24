@@ -69,6 +69,27 @@ Unterschied erkannte/korrigierte Zacken.
   Abschnitte abwechselnd weiß/hellgrau, Zeilen "gesamt" hellgelb + fett, Kopfzeile fixiert,
   Zahlenformate 0,0 / RMSSD 0,00 / lnRMSSD 0,000. Paket openpyxl==3.1.5.
 
+## 7b. Änderung 24.11.2026: Stabilisierung
+- Abfrage nach dem Intervall: "Stabilisierung: die ersten 60 s nach jedem Marker kennzeichnen? (j/n) [j]".
+- j: je Abschnitt zuerst Zeile `Stab.` (60 s ab Messbeginn bzw. Marker; Hinweis "Gewöhnungsphase"
+  bzw. "Stabilisierung"), danach Intervalle in voller Länge; zusätzlich Zeile
+  `gesamt ab 60 s` (ab +60 s). Abschnitt <= 60 s: Zeile leer, Hinweis
+  "Abschnitt zu kurz für Stabilisierung".
+- n: Intervalle wie bisher; Intervalle in den ersten 60 s der Messung erhalten Hinweis
+  "enthält Gewöhnungsphase (0–60 s)" (immer markiert).
+- Excel: Stab.-/Gewöhnungszeilen rot (F8CBAD); Infoblock-Eintrag "Stabilisierung".
+- CSV: zusätzliche Spalte `Stabilisierung_s` (60 bzw. 0).
+- Verlaufsgrafik: Gewöhnungsphase immer, Stabilisierung bei j grau hinterlegt; gestrichelt
+  bei j "gesamt ab 60 s", sonst "gesamt".
+- Begründung: Übergänge nach Haltungs-/Bedingungswechsel verfälschen Gesamtwerte (Testmessung
+  23.11.: Bewegung lnRMSSD 3,13 mit vs. 2,36 ohne erste Minute); Vorgehen wie Bourdillon et al.
+  2017, Blalock et al. 2026 (1 min Stabilisierung).
+
+## 7c. Änderung 24.11.2026: Mindestdauer
+- Fenster < 10 s erhalten keine Werte, Hinweis "zu kurz (< 10 s)". Begründung: 10 s ist das
+  kürzeste für RMSSD untersuchte Fenster (Muñoz et al. 2015). Kleinstes wählbares Intervall 10 s.
+- Zusätzlich technische Absicherung (eigene Annahme, keine Quelle): < 5 RR-Intervalle -> keine Werte.
+
 ## 8. Technik
 | Bereich | Wahl | Begründung |
 | --- | --- | --- |
@@ -92,7 +113,7 @@ Unterschied erkannte/korrigierte Zacken.
 - Änderung 23.11.2026: Pfeiltasten-Auswahl und klarere Markerbenennung, getestet (Pseudo-Terminal).
 
 ## 10. Annahmen
-- Mindestintervall 5 s technisch, Empfehlung >= 60 s.
+- Mindestintervall 10 s (Muñoz 2015), Empfehlung >= 60 s; MIN_RR = 5 als technische Absicherung (eigene Annahme).
 - Grenze 5 % Artefakte wie bisher (mit Betreuung festlegen).
 - README wird um Abschnitt "Auswertung" ergänzt.
 
